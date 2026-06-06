@@ -22,6 +22,7 @@ def test_local_fallback_returns_detailed_reason_text():
     assert result["score_interpretation"]["label"] == "Helpful"
     assert result["evidence_analysis"]
     assert result["suggested_rewrite"]
+    assert 0 <= result["quality_assessment"]["information_quality_score"] <= 100
 
 
 def test_prompt_requires_evidence_and_preserves_model_decision():
@@ -38,9 +39,11 @@ def test_prompt_requires_evidence_and_preserves_model_decision():
     )
 
     assert "Mỗi mục trong evidence_analysis phải trích" in prompt
-    assert "tuyệt đối không tự đổi label hoặc điểm số" in prompt
+    assert "tuyệt đối không tự đổi label hoặc điểm số helpfulness_score" in prompt
     assert '"suggested_rewrite"' in prompt
     assert '"helpfulness_score": 0.87' in prompt
+    assert '"rubric_scores"' in prompt
+    assert "41-60" in prompt
 
 
 def test_normalize_result_restores_required_fields_and_model_values():
@@ -70,6 +73,7 @@ def test_normalize_result_restores_required_fields_and_model_values():
     assert result["score_interpretation"]["confidence_level"] == "Medium"
     assert isinstance(result["why"], list)
     assert result["source"] == "gemini"
+    assert result["quality_assessment"]["information_quality_score"] == 0
 
 
 def test_generation_config_reserves_tokens_for_json_response():
@@ -78,3 +82,21 @@ def test_generation_config_reserves_tokens_for_json_response():
 
     assert config["maxOutputTokens"] == 8192
     assert config["thinkingConfig"]["thinkingBudget"] == 512
+
+
+def test_quality_score_uses_weighted_rubric_and_clamps_values():
+    explainer = GeminiReviewExplainer(api_key="test-key")
+    assessment = explainer._quality_assessment(
+        {
+            "specificity": 60,
+            "feature_coverage": 50,
+            "balance": 70,
+            "usage_context": 40,
+            "verifiability": 55,
+            "buyer_relevance": 120,
+        }
+    )
+
+    assert assessment["information_quality_score"] == 61.8
+    assert assessment["dimensions"][-1]["score"] == 100
+    assert assessment["score_type"] == "supplemental_rubric_score"

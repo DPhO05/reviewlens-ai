@@ -38,6 +38,24 @@ REASON_TEXT = {
     ),
 }
 
+QUALITY_WEIGHTS = {
+    "specificity": 0.20,
+    "feature_coverage": 0.20,
+    "balance": 0.15,
+    "usage_context": 0.15,
+    "verifiability": 0.15,
+    "buyer_relevance": 0.15,
+}
+
+QUALITY_LABELS = {
+    "specificity": "Tính cụ thể",
+    "feature_coverage": "Độ bao phủ thuộc tính",
+    "balance": "Tính cân bằng",
+    "usage_context": "Bối cảnh sử dụng",
+    "verifiability": "Khả năng kiểm chứng",
+    "buyer_relevance": "Giá trị hỗ trợ quyết định mua",
+}
+
 
 class GeminiReviewExplainer:
     def __init__(self, api_key: str | None = None, model: str | None = None):
@@ -50,6 +68,34 @@ class GeminiReviewExplainer:
         if not why:
             why = ["Mức độ chi tiết và thông tin thực tế trong review còn hạn chế."]
         helpful = model_result["label"] == "Helpful"
+        rubric_scores = {
+            "specificity": 72 if "specific_experience" in codes else 25,
+            "feature_coverage": 72 if "mentions_product_features" in codes else 30,
+            "balance": 78 if "mentions_pros_and_cons" in codes else 30,
+            "usage_context": 65 if "specific_experience" in codes else 25,
+            "verifiability": 68 if "specific_experience" in codes else 25,
+            "buyer_relevance": 68 if "mentions_product_features" in codes else 30,
+        }
+        if "sufficient_detail" in codes:
+            rubric_scores = {
+                key: min(100, value + 10) for key, value in rubric_scores.items()
+            }
+        if "too_generic" in codes:
+            rubric_scores = {key: min(value, 20) for key, value in rubric_scores.items()}
+        quality_assessment = self._quality_assessment(
+            rubric_scores,
+            {
+                key: {
+                    "evidence": "",
+                    "explanation": (
+                        "Điểm được ước lượng bằng reason codes local khi Gemini "
+                        "không khả dụng."
+                    ),
+                }
+                for key in QUALITY_WEIGHTS
+            },
+            source="local_rubric",
+        )
         return {
             "short_assessment": (
                 "Review này cung cấp thông tin hữu ích cho người mua."
@@ -120,7 +166,58 @@ class GeminiReviewExplainer:
                 "Phần giải thích diễn giải các tín hiệu hỗ trợ kết quả của model; "
                 "Gemini/local fallback không thay đổi nhãn hoặc điểm dự đoán."
             ),
+            "quality_assessment": quality_assessment,
             "source": "local_fallback",
+        }
+
+    @staticmethod
+    def _clamp_score(value: Any) -> float:
+        try:
+            return round(max(0.0, min(100.0, float(value))), 1)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _quality_assessment(
+        self,
+        scores: dict[str, Any],
+        details: dict[str, Any] | None = None,
+        source: str = "gemini_rubric",
+    ) -> dict[str, Any]:
+        normalized_scores = {
+            key: self._clamp_score(scores.get(key, 0)) for key in QUALITY_WEIGHTS
+        }
+        overall = round(
+            sum(
+                normalized_scores[key] * weight
+                for key, weight in QUALITY_WEIGHTS.items()
+            ),
+            1,
+        )
+        detail_map = details if isinstance(details, dict) else {}
+        dimensions = []
+        for key, weight in QUALITY_WEIGHTS.items():
+            detail = detail_map.get(key, {})
+            if not isinstance(detail, dict):
+                detail = {}
+            dimensions.append(
+                {
+                    "key": key,
+                    "criterion": QUALITY_LABELS[key],
+                    "score": normalized_scores[key],
+                    "weight": weight,
+                    "evidence": str(detail.get("evidence", "")),
+                    "explanation": str(detail.get("explanation", "")),
+                }
+            )
+        return {
+            "information_quality_score": overall,
+            "score_type": "supplemental_rubric_score",
+            "source": source,
+            "dimensions": dimensions,
+            "disclaimer": (
+                "Đây là điểm chất lượng thông tin bổ sung, không phải xác suất từ "
+                "model ML và không thay đổi label Helpful/Not Helpful."
+            ),
         }
 
     def _build_prompt(
@@ -140,7 +237,10 @@ Diễn giải thật chi tiết kết quả của model machine learning để n
 
 RANH GIỚI VAI TRÒ
 - Model ML là thành phần duy nhất quyết định label và helpfulness_score.
-- Bạn chỉ giải thích kết quả, tuyệt đối không tự đổi label hoặc điểm số.
+- Bạn tuyệt đối không tự đổi label hoặc điểm số helpfulness_score.
+- Bạn được chấm một information_quality_score RIÊNG theo rubric bên dưới.
+- Điểm rubric phải được chấm độc lập từ nội dung review, không kéo về gần
+  helpfulness_score chỉ để đồng thuận với model.
 - Không đánh giá sản phẩm là tốt hay xấu; chỉ đánh giá chất lượng thông tin của review.
 - Không suy đoán thông số, trải nghiệm, ý định hoặc đặc điểm không xuất hiện trong input.
 - Phân biệt rõ “bằng chứng có trong review” và “thông tin còn thiếu”.
@@ -166,6 +266,24 @@ CÁC TIÊU CHÍ CẦN PHÂN TÍCH
 - Mức liên quan: nội dung có tập trung vào trải nghiệm sản phẩm hay chỉ nói về shop/giao hàng.
 - Giá trị ra quyết định: người mua có thể dùng thông tin nào để so sánh hoặc xác định độ phù hợp.
 - Khoảng trống thông tin: còn thiếu điều gì để review đáng tin và hữu ích hơn.
+
+RUBRIC CHẤM ĐIỂM CHẤT LƯỢNG THÔNG TIN
+Chấm từng tiêu chí từ 0 đến 100, sử dụng toàn bộ dải điểm:
+- 0-20: gần như không có thông tin liên quan.
+- 21-40: có tín hiệu nhưng rất chung chung hoặc thiếu căn cứ.
+- 41-60: có một số thông tin hữu ích nhưng còn thiếu bối cảnh, số liệu hoặc độ bao phủ.
+- 61-80: thông tin khá cụ thể, có giá trị tham khảo rõ ràng nhưng vẫn còn khoảng trống.
+- 81-100: rất cụ thể, cân bằng, có thể kiểm chứng và hỗ trợ trực tiếp quyết định mua.
+
+Trọng số:
+- specificity: 20%
+- feature_coverage: 20%
+- balance: 15%
+- usage_context: 15%
+- verifiability: 15%
+- buyer_relevance: 15%
+
+Không tự tính điểm tổng. Backend sẽ tính trung bình có trọng số từ sáu điểm thành phần.
 
 YÊU CẦU VỀ BẰNG CHỨNG
 - Mỗi mục trong evidence_analysis phải trích một đoạn rất ngắn từ review ở field evidence.
@@ -202,7 +320,23 @@ Trả về duy nhất một JSON object hợp lệ, không markdown, không code
   "improvement_suggestion": "Một đoạn hướng dẫn cải thiện theo thứ tự ưu tiên.",
   "suggested_rewrite": "Phiên bản review được viết lại từ đúng thông tin đã có; dùng [cần bổ sung] cho dữ liệu còn thiếu.",
   "buyer_value": "Một đoạn mô tả review giúp người mua nào, trong quyết định nào và còn giới hạn gì.",
-  "model_alignment": "Giải thích các nhận định trên liên hệ với reason codes và kết quả model ra sao."
+  "model_alignment": "Giải thích các nhận định trên liên hệ với reason codes và kết quả model ra sao.",
+  "rubric_scores": {{
+    "specificity": 0,
+    "feature_coverage": 0,
+    "balance": 0,
+    "usage_context": 0,
+    "verifiability": 0,
+    "buyer_relevance": 0
+  }},
+  "rubric_details": {{
+    "specificity": {{"evidence": "...", "explanation": "..."}},
+    "feature_coverage": {{"evidence": "...", "explanation": "..."}},
+    "balance": {{"evidence": "...", "explanation": "..."}},
+    "usage_context": {{"evidence": "...", "explanation": "..."}},
+    "verifiability": {{"evidence": "...", "explanation": "..."}},
+    "buyer_relevance": {{"evidence": "...", "explanation": "..."}}
+  }}
 }}
 
 QUY TẮC CHẤT LƯỢNG
@@ -211,6 +345,7 @@ QUY TẮC CHẤT LƯỢNG
 - Không lặp lại cùng một nhận xét ở nhiều field.
 - suggested_rewrite không được thêm thông số hoặc trải nghiệm mới.
 - helpfulness_score phải giữ nguyên kiểu số và giá trị từ model.
+- Mỗi rubric score phải là số từ 0 đến 100 và bám đúng thang neo.
 - Chỉ trả JSON hợp lệ."""
 
     def _normalize_result(
@@ -241,6 +376,18 @@ QUY TẮC CHẤT LƯỢNG
         ):
             if not isinstance(normalized.get(field), list):
                 normalized[field] = fallback[field]
+        rubric_scores = result.get("rubric_scores", {})
+        if not isinstance(rubric_scores, dict):
+            rubric_scores = {}
+        rubric_details = result.get("rubric_details", {})
+        if not isinstance(rubric_details, dict):
+            rubric_details = {}
+        normalized["quality_assessment"] = self._quality_assessment(
+            rubric_scores,
+            rubric_details,
+        )
+        normalized.pop("rubric_scores", None)
+        normalized.pop("rubric_details", None)
         normalized["source"] = "gemini"
         return normalized
 

@@ -120,6 +120,34 @@ def explanation_card(explanation: dict[str, Any] | None) -> None:
         return
     st.subheader(explanation.get("short_assessment", "Giải thích"))
 
+    quality = explanation.get("quality_assessment", {})
+    if quality:
+        st.markdown("### Điểm chất lượng thông tin bổ sung")
+        quality_score = quality.get("information_quality_score")
+        st.metric(
+            "Information quality score",
+            f"{float(quality_score):.1f}/100"
+            if isinstance(quality_score, (int, float))
+            else "N/A",
+            help=quality.get("disclaimer", ""),
+        )
+        dimensions = quality.get("dimensions", [])
+        if dimensions:
+            chart_data = pd.DataFrame(dimensions)
+            st.plotly_chart(
+                px.bar(
+                    chart_data,
+                    x="score",
+                    y="criterion",
+                    orientation="h",
+                    range_x=[0, 100],
+                    text="score",
+                    title="Rubric chất lượng thông tin",
+                ),
+                use_container_width=True,
+            )
+        st.caption(quality.get("disclaimer", ""))
+
     score_info = explanation.get("score_interpretation", {})
     if score_info:
         st.markdown("### Diễn giải kết quả model")
