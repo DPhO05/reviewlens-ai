@@ -1,0 +1,14 @@
+{
+  "embedding_model_name": "demo-hashing-char-ngram",
+  "embedding_dim": 384,
+  "rf_probability_dim": 2,
+  "final_feature_dim": 386,
+  "threshold": 0.5,
+  "helpful_class": 1,
+  "label_mapping": {
+    "0": "Not Helpful",
+    "1": "Helpful"
+  },
+  "model_variant": "offline-demo-berf-style",
+  "warning": "Synthetic demo artifacts; replace with trained BERF-LGBM artifacts for research claims."
+}

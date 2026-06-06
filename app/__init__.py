@@ -1,0 +1,1 @@
+"""ReviewLens Streamlit application."""
