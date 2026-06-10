@@ -1,0 +1,50 @@
+{
+  "raw_source": "Data/raw_reviews.csv",
+  "label_source": "Data/gold_data/data_gold.csv",
+  "output": "Data/gold_data/tiki_reviews_full_labeled_9k.csv",
+  "merge_keys": [
+    "review_id",
+    "product_id",
+    "user_id"
+  ],
+  "raw_rows": 139375,
+  "label_rows": 9000,
+  "output_rows": 9000,
+  "columns": [
+    "review_id",
+    "product_id",
+    "user_id",
+    "rating",
+    "title",
+    "content",
+    "review_text",
+    "created_at",
+    "helpful_count",
+    "purchased",
+    "purchased_int",
+    "crawled_at",
+    "word_count",
+    "annotation_id",
+    "sample_group",
+    "help",
+    "helpfulness_score",
+    "confidence",
+    "reason",
+    "specificity",
+    "product_experience",
+    "decision_value",
+    "clarity",
+    "noise_penalty",
+    "quality_flags",
+    "label_version",
+    "label_source",
+    "adjudicated",
+    "needs_human_review"
+  ],
+  "target_column": "help",
+  "target_source_column": "is_helpful",
+  "help_distribution": {
+    "0": 3962,
+    "1": 5038
+  }
+}

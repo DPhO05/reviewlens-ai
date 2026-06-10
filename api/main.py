@@ -49,8 +49,12 @@ class BatchRequest(BaseModel):
 
 def analyze_item(request: ReviewRequest) -> dict[str, Any]:
     try:
-        model_result = predictor.predict(request.review_text)
-    except ValueError as exc:
+        model_result = predictor.predict(
+            review_text=request.review_text,
+            rating=request.rating,
+            verified_purchase=request.verified_purchase,
+        )
+    except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     explanation = None
@@ -75,6 +79,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "model_variant": predictor.config.get("model_variant"),
+        "model_id": predictor.config.get("model_id"),
         "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
     }
 

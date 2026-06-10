@@ -54,7 +54,11 @@ def local_services() -> tuple[ReviewHelpfulnessPredictor, GeminiReviewExplainer]
 
 def analyze_locally(payload: dict[str, Any]) -> dict[str, Any]:
     predictor, explainer = local_services()
-    model_result = predictor.predict(payload["review_text"])
+    model_result = predictor.predict(
+        review_text=payload["review_text"],
+        rating=int(payload["rating"]),
+        verified_purchase=payload.get("verified_purchase"),
+    )
     explanation = None
     if payload.get("use_gemini", True):
         explanation = explainer.explain(
@@ -277,6 +281,20 @@ def single_analyzer() -> None:
         col2.metric("Label", result["label"])
         col3.metric("Confidence", result["confidence_level"])
         st.progress(score)
+        if "predicted_rubric_score" in result:
+            aux1, aux2 = st.columns(2)
+            aux1.metric(
+                "Predicted rubric score",
+                f"{result['predicted_rubric_score']:.2f}/7",
+            )
+            aux2.metric(
+                "Predicted annotation confidence",
+                f"{result['predicted_annotation_confidence'] * 100:.1f}%",
+            )
+            st.caption(
+                "Hai feature này do auxiliary model dự đoán, không phải nhãn "
+                "hoặc score được nhập thủ công."
+            )
         reason_codes = result.get("model_reason_codes", [])
         if reason_codes:
             st.caption("Model reason codes: " + ", ".join(reason_codes))

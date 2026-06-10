@@ -6,3 +6,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .streamlit/secrets.toml
+models/hf_gold_v2/
+artifacts/
+Data/raw_reviews.csv
+Data/batches/
+Data/gold_data/*
+!Data/gold_data/tiki_reviews_full_labeled_9k.csv
+!Data/gold_data/tiki_reviews_full_labeled_9k.manifest.json
